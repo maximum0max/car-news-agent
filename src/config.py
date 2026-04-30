@@ -39,3 +39,21 @@ PEXELS_TOP_N = 5
 
 # Article body fetch timeout (seconds). Some news sites are slow.
 FETCH_TIMEOUT = 20
+
+# Social channel URLs shown in the "Приєднуйтесь до наших каналів" CTA block
+# at the bottom of every post. Set any *_URL to None to hide that channel.
+SOCIAL_WHATSAPP_URL = "https://www.whatsapp.com/channel/0029VaWoeTALtOjLftmnSy2P"
+SOCIAL_VIBER_URL = "https://invite.viber.com/?g2=AQAvsDVif3gD%2BVKav5sfNgo5pGirvnKfyu9t2W26wb0wJ7UwbDMq6lirja5lOaTK"
+SOCIAL_TELEGRAM_URL = "https://t.me/newsauto_com_ua"
+
+# Icon image URLs for the social buttons. Defaults to Simple Icons CDN, which
+# serves clean white-on-transparent SVGs by brand name. To use a custom icon,
+# upload it to WP media library and replace the URL with the hosted file.
+SOCIAL_WHATSAPP_ICON = "https://cdn.simpleicons.org/whatsapp/white"
+SOCIAL_VIBER_ICON = "https://cdn.simpleicons.org/viber/white"
+SOCIAL_TELEGRAM_ICON = "https://cdn.simpleicons.org/telegram/white"
+
+# How many "Читайте також" related posts to include at the end of each post.
+# These are pulled from existing posts on the site that share tags with the
+# new one, which is the strongest signal we have to keep them topically relevant.
+RELATED_POSTS_COUNT = 3

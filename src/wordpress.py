@@ -1,6 +1,6 @@
 """
-Publish a post to WordPress via REST API. Handles tag find-or-create
-so we can pass tag names rather than IDs.
+Publish a post to WordPress via REST API. Handles tag find-or-create,
+related-post lookup, and Wordfence-style concatenated-JSON responses.
 """
 import json
 import logging
@@ -19,15 +19,13 @@ def publish_post(
     content: str,
     excerpt: str,
     slug: str,
-    tags: list[str],
+    tag_ids: list[int],
     featured_media: int | None = None,
 ) -> int:
-    """Create a WordPress post and return its ID."""
+    """Create a WordPress post and return its ID. Tags must already be resolved."""
     wp_url = os.environ["WP_URL"].rstrip("/")
     username = os.environ["WP_USERNAME"]
     password = os.environ["WP_APP_PASSWORD"]
-
-    tag_ids = _resolve_tag_ids(wp_url, username, password, tags) if tags else []
 
     payload: dict[str, Any] = {
         "title": title,
@@ -53,35 +51,18 @@ def publish_post(
         log.error(f"WP post creation failed: {resp.status_code} {resp.text[:500]}")
         resp.raise_for_status()
 
-    post_id = _extract_post_id(resp.text)
+    post_id = _extract_first_with_id(resp.text)["id"]
     log.info(f"Created WP post id={post_id} status={POST_STATUS}")
     return post_id
 
 
-def _extract_post_id(body: str) -> int:
-    # A security plugin (Wordfence-style) may prepend a status object before
-    # the real WP response, producing concatenated JSON like:
-    #   {"status":0,"status_message":"ok","message_token":...}{"id":123,...}
-    # Walk every top-level JSON object and return the first one with an "id".
-    decoder = json.JSONDecoder()
-    text = body.lstrip()
-    while text:
-        obj, end = decoder.raw_decode(text)
-        if isinstance(obj, dict) and "id" in obj:
-            return obj["id"]
-        text = text[end:].lstrip()
-    raise RuntimeError(f"No post object found in WP response: {body[:300]!r}")
-
-
-def _resolve_tag_ids(
-    wp_url: str,
-    username: str,
-    password: str,
-    tag_names: list[str],
-) -> list[int]:
+def resolve_tag_ids(tag_names: list[str]) -> list[int]:
     """For each tag name, find existing or create new, return list of IDs."""
+    if not tag_names:
+        return []
+    wp_url = os.environ["WP_URL"].rstrip("/")
+    auth = (os.environ["WP_USERNAME"], os.environ["WP_APP_PASSWORD"])
     tags_endpoint = f"{wp_url}/wp-json/wp/v2/tags"
-    auth = (username, password)
     ids: list[int] = []
 
     for name in tag_names:
@@ -89,7 +70,6 @@ def _resolve_tag_ids(
         if not name:
             continue
         try:
-            # Search by exact name match.
             search = requests.get(
                 tags_endpoint,
                 auth=auth,
@@ -97,15 +77,15 @@ def _resolve_tag_ids(
                 timeout=15,
             )
             search.raise_for_status()
+            results = _extract_list(search.text)
             found = next(
-                (t for t in search.json() if t.get("name", "").lower() == name.lower()),
+                (t for t in results if t.get("name", "").lower() == name.lower()),
                 None,
             )
             if found:
                 ids.append(found["id"])
                 continue
 
-            # Create it.
             create = requests.post(
                 tags_endpoint,
                 auth=auth,
@@ -113,11 +93,82 @@ def _resolve_tag_ids(
                 timeout=15,
             )
             if create.ok:
-                ids.append(create.json()["id"])
+                ids.append(_extract_first_with_id(create.text)["id"])
             else:
                 log.warning(f"Could not create tag {name!r}: {create.status_code}")
-        except requests.RequestException as e:
+        except (requests.RequestException, RuntimeError) as e:
             log.warning(f"Tag resolution failed for {name!r}: {e}")
             continue
 
     return ids
+
+
+def find_related_posts(tag_ids: list[int], limit: int = 3) -> list[dict[str, Any]]:
+    """
+    Return up to `limit` recent posts that share at least one tag with the
+    given tag_ids list. Each item is {"id", "link", "title"}.
+    Returns [] if nothing matches or on any error — caller treats as optional.
+    """
+    if not tag_ids:
+        return []
+    wp_url = os.environ["WP_URL"].rstrip("/")
+    auth = (os.environ["WP_USERNAME"], os.environ["WP_APP_PASSWORD"])
+    posts_endpoint = f"{wp_url}/wp-json/wp/v2/posts"
+
+    try:
+        resp = requests.get(
+            posts_endpoint,
+            auth=auth,
+            params={
+                "tags": ",".join(str(t) for t in tag_ids),
+                "per_page": limit,
+                "_fields": "id,link,title",
+                "status": "publish",
+                "orderby": "date",
+                "order": "desc",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        items = _extract_list(resp.text)
+    except (requests.RequestException, RuntimeError) as e:
+        log.warning(f"Related-posts lookup failed: {e}")
+        return []
+
+    out: list[dict[str, Any]] = []
+    for it in items:
+        title = it.get("title", {})
+        rendered = title.get("rendered") if isinstance(title, dict) else None
+        if not rendered or not it.get("link"):
+            continue
+        out.append({"id": it.get("id"), "link": it["link"], "title": rendered})
+    return out
+
+
+# ---- response parsing helpers ----------------------------------------------
+# A security plugin (Wordfence-style) prepends a JSON status object before
+# every response body, so plain resp.json() throws JSONDecodeError("Extra
+# data"). These walk the concatenated JSON values and return the first one
+# that looks like the data we want.
+
+def _walk_json(body: str):
+    decoder = json.JSONDecoder()
+    text = body.lstrip()
+    while text:
+        obj, end = decoder.raw_decode(text)
+        yield obj
+        text = text[end:].lstrip()
+
+
+def _extract_first_with_id(body: str) -> dict[str, Any]:
+    for obj in _walk_json(body):
+        if isinstance(obj, dict) and "id" in obj:
+            return obj
+    raise RuntimeError(f"No object with 'id' in WP response: {body[:300]!r}")
+
+
+def _extract_list(body: str) -> list[dict[str, Any]]:
+    for obj in _walk_json(body):
+        if isinstance(obj, list):
+            return obj
+    return []

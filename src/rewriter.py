@@ -57,16 +57,31 @@ SEO-ВИМОГИ:
 - image_keywords: 3–5 АНГЛІЙСЬКИХ слів для пошуку стокового фото на Pexels (приклад: "Tesla Semi truck highway", "BMW M3 racing track").
 - tags: 3–6 коротких тегів українською (моделі, бренди, технології, тематика).
 - slug_source: 3–6 англійських слів для URL (без дієслів-зв'язок, тільки суть).
+- meta_description: 150–160 символів — для SEO meta тегу. Має містити ключове слово і заклик до дії (наприклад "Дізнайтеся більше"). Це окреме поле від excerpt.
+- faq: масив з РІВНО 4 пар питання-відповідь у форматі [{"q": "...", "a": "..."}]. Це критично для AEO (Answer Engine Optimization) — питання забезпечують featured snippets у Google і відповіді в AI пошуку (Perplexity, ChatGPT Search, Gemini).
+  ВИМОГИ ДО faq:
+  • Питання — як їх би ставив користувач у Google. Природна жива мова. Приклади: "Скільки коштує Tesla Semi?", "Коли вийде нова BMW M3?", "Чи є Hyundai Ioniq 5 надійним?", "Який запас ходу у Rivian R1T?".
+  • Перше питання має містити основне ключове слово.
+  • Відповідь — 30–60 слів, ФАКТИЧНА, стисла, починається з прямої відповіді (без "ну" / "звичайно"). Може бути цитованою як featured snippet.
+  • Всі 4 питання різні, охоплюють: 1) що це таке, 2) ціна / коли вийде, 3) ключова характеристика, 4) порівняння або альтернатива.
+  • Без вигаданих цифр. Якщо точної відповіді немає у джерелі — давай загальнодоступний контекст або "поки невідомо, очікуються офіційні дані".
 
 Поверни ВИКЛЮЧНО валідний JSON, без жодного тексту до чи після:
 {
   "title": "...",
   "slug_source": "english phrase 3-6 words",
   "excerpt": "...",
+  "meta_description": "150-160 символів з ключовим словом і CTA",
   "content_html": "<p>...</p><h2>...</h2><p>...</p><h2>...</h2><ul><li><strong>...</strong>: ...</li>...</ul><h2>Висновок</h2><p>...</p>",
   "tags": ["тег1", "тег2", "тег3"],
   "image_keywords": "english keywords for stock photo",
-  "image_alt": "український опис фото з ключовим словом"
+  "image_alt": "український опис фото з ключовим словом",
+  "faq": [
+    {"q": "Питання 1?", "a": "Відповідь 1."},
+    {"q": "Питання 2?", "a": "Відповідь 2."},
+    {"q": "Питання 3?", "a": "Відповідь 3."},
+    {"q": "Питання 4?", "a": "Відповідь 4."}
+  ]
 }"""
 
 
@@ -104,7 +119,7 @@ def rewrite_article(title: str, content: str, url: str) -> dict[str, Any]:
         ],
         response_format={"type": "json_object"},
         temperature=0.7,
-        max_tokens=3500,
+        max_tokens=4500,
     )
 
     raw = response.choices[0].message.content
@@ -118,10 +133,22 @@ def rewrite_article(title: str, content: str, url: str) -> dict[str, Any]:
         raise RuntimeError("OpenAI did not return valid JSON") from e
 
     # Validate required fields.
-    required = ["title", "excerpt", "content_html", "tags", "image_keywords", "image_alt"]
+    required = [
+        "title", "excerpt", "meta_description", "content_html",
+        "tags", "image_keywords", "image_alt", "faq",
+    ]
     missing = [k for k in required if k not in data]
     if missing:
         raise RuntimeError(f"OpenAI response missing fields: {missing}")
+
+    # Sanity-check faq shape so downstream rendering doesn't crash.
+    if not isinstance(data["faq"], list):
+        data["faq"] = []
+    data["faq"] = [
+        {"q": str(item.get("q", "")).strip(), "a": str(item.get("a", "")).strip()}
+        for item in data["faq"]
+        if isinstance(item, dict) and item.get("q") and item.get("a")
+    ]
 
     # Build the slug from the English slug_source if present, otherwise the title.
     slug_source = data.get("slug_source") or data["title"]
