@@ -5,12 +5,13 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import feedparser
 import requests
 import trafilatura
 
-from config import FETCH_TIMEOUT, ITEMS_PER_FEED
+from config import FETCH_TIMEOUT, ITEMS_PER_FEED, UKRAINIAN_SOURCE_HOSTS
 
 log = logging.getLogger(__name__)
 
@@ -70,11 +71,37 @@ def fetch_article_text(url: str) -> str | None:
     return text
 
 
-def get_new_articles(feeds: list[str], processed: set[str]) -> list[dict[str, Any]]:
+def get_new_articles(
+    primary_feeds: list[str],
+    secondary_feeds: list[str],
+    processed: set[str],
+) -> list[dict[str, Any]]:
     """
-    Pull recent items from each feed, skip ones already processed,
-    fetch full text, and return them sorted newest-first.
+    Two-tier article selection:
+      1. Try primary (Ukrainian) feeds first — if any new article is found and
+         its body extracts cleanly, return only those candidates.
+      2. Only when primary feeds yield nothing usable, fall back to secondary
+         (English) feeds. The rewriter then applies a Ukraine-relevance gate
+         on these and may skip articles with no UA angle.
+
+    Each returned candidate carries `source_lang` ("uk" or "en") so the
+    rewriter can branch its prompt (translate vs. just restructure).
     """
+    primary = _collect_candidates(primary_feeds, processed)
+    enriched_primary = _enrich(primary)
+    if enriched_primary:
+        log.info(f"Using {len(enriched_primary)} primary (UA) candidate(s)")
+        return enriched_primary
+
+    log.info("No primary (UA) candidates available — falling back to secondary (EN) feeds")
+    secondary = _collect_candidates(secondary_feeds, processed)
+    enriched_secondary = _enrich(secondary)
+    log.info(f"Found {len(enriched_secondary)} secondary (EN) candidate(s)")
+    return enriched_secondary
+
+
+def _collect_candidates(feeds: list[str], processed: set[str]) -> list[dict[str, Any]]:
+    """Parse the given feeds and return un-processed entries sorted newest-first."""
     candidates: list[dict[str, Any]] = []
 
     for feed_url in feeds:
@@ -90,24 +117,27 @@ def get_new_articles(feeds: list[str], processed: set[str]) -> list[dict[str, An
             if not link or link in processed:
                 continue
 
+            host = urlparse(link).netloc.lower().lstrip("www.")
+            source_lang = "uk" if host in UKRAINIAN_SOURCE_HOSTS else "en"
+
             candidates.append({
                 "url": link,
                 "title": entry.get("title", "").strip(),
                 "feed": feed_url,
+                "source_lang": source_lang,
                 "published": entry.get("published_parsed") or entry.get("updated_parsed"),
                 "summary": entry.get("summary", ""),
             })
 
-    # Sort newest first.
     candidates.sort(
         key=lambda x: x["published"] if x["published"] else (0,) * 9,
         reverse=True,
     )
+    return candidates
 
-    log.info(f"Found {len(candidates)} new candidate articles across all feeds")
 
-    # Fetch full text for the top candidates only (don't waste time fetching
-    # all of them — we'll likely only post one).
+def _enrich(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fetch full body text for the top candidates; drop any that fail."""
     enriched: list[dict[str, Any]] = []
     for cand in candidates[:5]:
         text = fetch_article_text(cand["url"])
@@ -116,7 +146,5 @@ def get_new_articles(feeds: list[str], processed: set[str]) -> list[dict[str, An
         cand["content"] = text
         enriched.append(cand)
         if len(enriched) >= 3:
-            # Three good candidates is plenty — main loop will pick first.
             break
-
     return enriched

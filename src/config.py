@@ -3,14 +3,32 @@ Configuration. Edit FEEDS to change sources, and the constants at the bottom
 to tune behavior.
 """
 
-# RSS feeds to pull from. Verify each URL is alive before adding.
-# Order doesn't matter — articles are picked by recency across all feeds.
-FEEDS = [
+# Two-tier feed strategy: PRIMARY (Ukrainian-language sources) is checked first.
+# SECONDARY (English global sources) is only used when no new article is found
+# in any primary feed — keeps the focus on Ukrainian-market content.
+#
+# When a secondary feed is used, the rewriter applies a Ukraine-relevance gate
+# and skips articles with no realistic angle for Ukrainian readers (e.g. US-only
+# municipal stories, e-bike/e-scooter promos, solar/wind tangents on electrek).
+PRIMARY_FEEDS_UA = [
+    "https://autogeek.com.ua/feed/",
+    "https://news.infocar.ua/rss/news.php",
+]
+
+SECONDARY_FEEDS_EN = [
     "https://www.carscoops.com/feed/",
     "https://www.motor1.com/rss/articles/all/",
     "https://insideevs.com/rss/articles/all/",
     "https://electrek.co/feed/",
 ]
+
+# Hostnames considered Ukrainian-language sources. Used by feeds.py to tag each
+# candidate with `source_lang="uk"` so the rewriter knows not to translate.
+UKRAINIAN_SOURCE_HOSTS = {
+    "autogeek.com.ua",
+    "news.infocar.ua",
+    "infocar.ua",
+}
 
 # OpenAI model. gpt-4o has substantially better Ukrainian quality and
 # follows length/structure constraints reliably — worth the ~10x cost

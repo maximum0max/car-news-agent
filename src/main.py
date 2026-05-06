@@ -14,9 +14,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from config import (
-    FEEDS,
     MAX_POSTS_PER_RUN,
+    PRIMARY_FEEDS_UA,
     RELATED_POSTS_COUNT,
+    SECONDARY_FEEDS_EN,
     SOCIAL_TELEGRAM_ICON,
     SOCIAL_TELEGRAM_URL,
     SOCIAL_VIBER_ICON,
@@ -26,7 +27,7 @@ from config import (
 )
 from feeds import get_new_articles, load_processed, mark_processed
 from images import find_and_upload_image
-from rewriter import escape_html, rewrite_article
+from rewriter import ArticleSkipped, escape_html, rewrite_article
 from wordpress import find_related_posts, publish_post, resolve_tag_ids
 
 logging.basicConfig(
@@ -44,7 +45,7 @@ def run() -> int:
     processed = load_processed()
     log.info(f"State: {len(processed)} articles previously processed")
 
-    candidates = get_new_articles(FEEDS, processed)
+    candidates = get_new_articles(PRIMARY_FEEDS_UA, SECONDARY_FEEDS_EN, processed)
     if not candidates:
         log.info("No new articles to process. Exiting cleanly.")
         return 0
@@ -56,7 +57,8 @@ def run() -> int:
 
         url = article["url"]
         title = article["title"]
-        log.info(f"Processing: {title}")
+        source_lang = article.get("source_lang", "en")
+        log.info(f"Processing [{source_lang}]: {title}")
         log.info(f"  URL: {url}")
 
         try:
@@ -64,7 +66,13 @@ def run() -> int:
                 title=title,
                 content=article["content"],
                 url=url,
+                source_lang=source_lang,
             )
+        except ArticleSkipped as e:
+            log.info(f"Skipped (no UA relevance): {e}")
+            # Mark processed so the same irrelevant article is never re-evaluated.
+            mark_processed(url)
+            continue
         except Exception as e:
             log.error(f"Rewrite failed: {e}", exc_info=True)
             # Mark as processed anyway so we don't keep retrying a bad article.

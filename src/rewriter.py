@@ -15,6 +15,11 @@ from config import OPENAI_MODEL
 log = logging.getLogger(__name__)
 
 
+class ArticleSkipped(Exception):
+    """Raised when the rewriter decides an article has no Ukraine-relevance."""
+    pass
+
+
 SYSTEM_PROMPT = """Ти — досвідчений український автомобільний журналіст і SEO-копірайтер для newsauto.com.ua. Твоя задача — створити українську SEO-оптимізовану новину на основі англомовного джерела.
 
 АУДИТОРІЯ: українські водії, автолюбителі та потенційні покупці. Завжди шукай кут, який цікавий саме українському читачу — як новина впливає на ринок Європи й України, чи доступне авто в нас, чи вплине на ціни, імпорт, експлуатацію, паливо. Уникай суто гіперлокальних сюжетів без жодного глобального значення (наприклад, муніципальної ініціативи в одному американському місті чи вітряків у Бразилії). Якщо новина все одно глобально-значуща (нова технологія, рішення великого виробника, регуляторні зміни ЄС) — розкривай її через міжнародний контекст, важливий для українця.
@@ -144,18 +149,27 @@ SEO-ВИМОГИ:
 }"""
 
 
-def rewrite_article(title: str, content: str, url: str) -> dict[str, Any]:
+def rewrite_article(
+    title: str,
+    content: str,
+    url: str,
+    source_lang: str = "en",
+) -> dict[str, Any]:
     """
-    Rewrite an English article into Ukrainian, returning a dict with:
-      title, slug, excerpt, content_html, tags, image_keywords
-    Adds the source link to content_html before returning.
+    Rewrite the source article into a Ukrainian SEO post.
+    `source_lang` is "uk" for Ukrainian-language sources (autogeek, infocar)
+    or "en" for English global sources (carscoops, motor1, etc.).
+
+    For English sources, the model first applies a Ukraine-relevance gate and
+    may return {"skip": true, "skip_reason": "..."} — in which case this
+    function raises ArticleSkipped and main.py marks the URL processed without
+    publishing. Ukrainian-language sources are never gated (already relevant).
     """
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    user_message = (
+    base_instructions = (
         f"ОРИГІНАЛЬНИЙ ЗАГОЛОВОК: {title}\n\n"
         f"ОРИГІНАЛЬНИЙ ТЕКСТ:\n{content}\n\n"
-        f"Створи українську SEO-статтю згідно з вимогами системи.\n\n"
         f"ОБОВ'ЯЗКОВО: тіло content_html має містити НЕ МЕНШЕ 500 і НЕ БІЛЬШЕ 700 слів "
         f"(рахуй усі слова в усіх <p>, <h2>, <li> разом). Менше 500 слів — неприпустимо.\n\n"
         f"АЛГОРИТМ: спочатку напиши чернетку, потім порахуй слова. Якщо менше 500 — "
@@ -165,9 +179,41 @@ def rewrite_article(title: str, content: str, url: str) -> dict[str, Any]:
         f"  • як ця новина вписується у стратегію виробника,\n"
         f"  • що варто знати українським водіям про цю модель або бренд.\n"
         f"Без вигаданих цифр — лише загальновідомі ринкові факти.\n\n"
-        f"Бульти в <ul>: кожен <li> — мінімум 2, бажано 3 повні речення. "
+        f"Пункти в <ul>: кожен <li> — мінімум 2, бажано 3 повні речення. "
         f"Не одне коротке речення з двокрапкою."
     )
+
+    if source_lang == "uk":
+        user_message = (
+            f"ОРИГІНАЛЬНА МОВА: українська (джерело — український автомобільний сайт).\n"
+            f"НЕ перекладай — перепиши/розшир/переструктуруй для SEO. "
+            f"Збережи всі факти, цифри, цитати з оригіналу. Покращ заголовок і структуру "
+            f"за правилами системи (чергуй стилі, дотримуйся 60–70 символів, прямого "
+            f"порядку слів, відповіді на «Що сталося?»).\n\n"
+            f"{base_instructions}"
+        )
+    else:
+        user_message = (
+            f"ОРИГІНАЛЬНА МОВА: англійська.\n\n"
+            f"ФІЛЬТР РЕЛЕВАНТНОСТІ — спершу оціни, чи має ця новина РЕАЛЬНУ цінність "
+            f"для українського автомобільного читача:\n"
+            f"  ✓ ТАК, релевантна, якщо: торкається моделей, доступних чи планованих "
+            f"в Європі/Україні; стосується глобальних трендів (EV, батареї, "
+            f"автономне водіння, регуляції ЄС); рішення великих виробників "
+            f"(Toyota, VW, BMW, Hyundai, Tesla, Stellantis тощо); зміни цін, "
+            f"тарифів, постачання, що зачіпають європейський ринок.\n"
+            f"  ✗ НІ, не релевантна, якщо: суто локальна подія в США / Австралії / "
+            f"Бразилії / Канаді без глобального резонансу; новина про "
+            f"електросамокати, велосипеди, сонячні панелі, вітряки, мобільні застосунки; "
+            f"внутрішньокорпоративні справи без впливу на покупця; огляди "
+            f"моделей, недоступних у Європі (Ford F-150 Lightning, Chevy Silverado EV, "
+            f"американські pickup-варіанти, JDM-only моделі тощо).\n\n"
+            f"ЯКЩО НЕ РЕЛЕВАНТНА — поверни ТІЛЬКИ цей JSON, без жодного іншого тексту:\n"
+            f'  {{"skip": true, "skip_reason": "коротке пояснення українською"}}\n\n'
+            f"ЯКЩО РЕЛЕВАНТНА — створи повну українську SEO-статтю згідно з системними "
+            f"вимогами:\n\n"
+            f"{base_instructions}"
+        )
 
     log.info("Calling OpenAI for rewrite...")
     response = client.chat.completions.create(
@@ -190,6 +236,11 @@ def rewrite_article(title: str, content: str, url: str) -> dict[str, Any]:
     except json.JSONDecodeError as e:
         log.error(f"OpenAI returned invalid JSON: {raw[:500]}")
         raise RuntimeError("OpenAI did not return valid JSON") from e
+
+    # Relevance gate: model may opt out of articles with no UA angle.
+    if data.get("skip") is True:
+        reason = str(data.get("skip_reason", "no Ukraine relevance")).strip() or "no Ukraine relevance"
+        raise ArticleSkipped(reason)
 
     # Validate required fields.
     required = [
