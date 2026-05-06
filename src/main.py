@@ -75,6 +75,7 @@ def run() -> int:
             media_id, photographer = find_and_upload_image(
                 keywords=rewritten["image_keywords"],
                 alt_text=rewritten.get("image_alt"),
+                fallback_keywords=rewritten.get("image_keywords_fallback"),
             )
         except Exception as e:
             log.warning(f"Image step failed (continuing without): {e}")

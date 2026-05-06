@@ -19,6 +19,7 @@ PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 def find_and_upload_image(
     keywords: str,
     alt_text: str | None = None,
+    fallback_keywords: str | None = None,
 ) -> tuple[int | None, str | None]:
     """
     Search Pexels with the given keywords, download a top result,
@@ -26,19 +27,34 @@ def find_and_upload_image(
     Either value can be None if a step fails — caller decides how to handle.
     `alt_text` is what gets stored on the WP media item (good for SEO);
     falls back to a generic Pexels credit if not provided.
+
+    Tries `keywords` first, then `fallback_keywords` (typically just the brand
+    name), then a generic "modern car" query — whichever returns a hit first
+    wins. This avoids the "no photo at all" outcome when the rewriter picks
+    a search query Pexels has nothing for (rare/new model names).
     """
-    photo_url, photographer = _search_pexels(keywords)
+    queries = [q.strip() for q in [keywords, fallback_keywords, "modern car"] if q and q.strip()]
+
+    photo_url, photographer, matched_query = None, None, None
+    for query in queries:
+        photo_url, photographer = _search_pexels(query)
+        if photo_url:
+            matched_query = query
+            log.info(f"Pexels matched on query: {query!r}")
+            break
+        log.info(f"Pexels: no result for {query!r}, trying next")
+
     if not photo_url:
-        log.warning(f"No Pexels result for: {keywords!r}")
+        log.warning(f"No Pexels result for any query in {queries}")
         return None, None
 
     image_bytes, content_type = _download_image(photo_url)
     if not image_bytes:
         return None, photographer
 
-    filename = _safe_filename(keywords) + ".jpg"
+    filename = _safe_filename(matched_query or keywords) + ".jpg"
     final_alt = alt_text or (
-        f"Photo by {photographer} on Pexels" if photographer else keywords
+        f"Photo by {photographer} on Pexels" if photographer else (matched_query or keywords)
     )
 
     media_id = _upload_to_wp(image_bytes, content_type, filename, final_alt)
