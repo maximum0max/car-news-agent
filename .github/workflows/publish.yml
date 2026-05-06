@@ -1,8 +1,8 @@
 name: Publish car news
 
 # Triggered externally by cron-job.org via GitHub API on a Kyiv-time schedule
-# (morning 08:00–11:00, evening 18:00–21:00). Also supports manual trigger
-# from the Actions tab.
+# (hourly during morning 08:00–11:00 and evening 18:00–21:00 — ~8 fires/day).
+# Also supports manual trigger from the Actions tab.
 on:
   workflow_dispatch:
 

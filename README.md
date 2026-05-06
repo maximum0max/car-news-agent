@@ -15,9 +15,9 @@ Automated pipeline that pulls car news from RSS feeds, rewrites it in Ukrainian 
 
 ## Schedule
 
-GitHub Actions cron fires 11 times per day in time windows roughly matching **8:00–12:00 and 18:00–21:00 Madrid time** (during summer time / CEST). Each fire processes at most one new article.
+cron-job.org pings the GitHub `workflow_dispatch` API on a **Kyiv-time** schedule — hourly during the morning window **08:00–11:00** and evening window **18:00–21:00**, for ~8 fires per day. Each fire processes at most one new article (≤ 8 posts/day max).
 
-Cron times are in **UTC** because GitHub Actions doesn't support timezones. During winter (CET, last Sun of October to last Sun of March) shift the cron lines forward by 1 hour or just live with the 1-hour drift — it'll publish 7:00–11:00 / 17:00–20:00 local time in winter.
+The schedule lives in cron-job.org, not in this repo — adjust cadence there. The workflow file (`.github/workflows/publish.yml`) only declares `workflow_dispatch` and supports manual triggering from the GitHub Actions tab.
 
 ## Setup (one-time, ~20 minutes)
 
