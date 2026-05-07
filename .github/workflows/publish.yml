@@ -1,14 +1,14 @@
 name: Publish car news
 
-# Schedule: every 30 minutes during the Kyiv-time morning (08:00–11:00) and
-# evening (18:00–21:00) windows. GitHub Actions cron is in UTC, so during
-# EEST (summer, UTC+3) we use 05:00–08:00 UTC and 15:00–18:00 UTC.
+# Schedule: hourly during the Kyiv-time morning (08:00–11:00) and evening
+# (18:00–22:00) windows = 9 fires/day. GitHub Actions cron is in UTC, so
+# during EEST (summer, UTC+3) we use 05:00–08:00 UTC and 15:00–19:00 UTC.
 # In winter (EET, UTC+2) firings shift +1 hour in local time.
 # Manual trigger from the Actions tab is also supported.
 on:
   schedule:
-    - cron: "0,30 5-8 * * *"     # 08:00, 08:30, ..., 11:00 Kyiv (EEST)
-    - cron: "0,30 15-18 * * *"   # 18:00, 18:30, ..., 21:00 Kyiv (EEST)
+    - cron: "0 5-8 * * *"      # 08:00, 09:00, 10:00, 11:00 Kyiv (EEST) — 4 fires
+    - cron: "0 15-19 * * *"    # 18:00, 19:00, 20:00, 21:00, 22:00 Kyiv (EEST) — 5 fires
   workflow_dispatch:
 
 permissions:
