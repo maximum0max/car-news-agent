@@ -107,6 +107,9 @@ def run() -> int:
                 slug=rewritten["slug"],
                 tag_ids=tag_ids,
                 featured_media=media_id,
+                focus_keyphrase=rewritten.get("focus_keyphrase"),
+                meta_description=rewritten.get("meta_description"),
+                seo_title=rewritten["title"],
             )
         except Exception as e:
             log.error(f"WP publish failed: {e}", exc_info=True)

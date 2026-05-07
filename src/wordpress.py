@@ -21,8 +21,18 @@ def publish_post(
     slug: str,
     tag_ids: list[int],
     featured_media: int | None = None,
+    focus_keyphrase: str | None = None,
+    meta_description: str | None = None,
+    seo_title: str | None = None,
 ) -> int:
-    """Create a WordPress post and return its ID. Tags must already be resolved."""
+    """Create a WordPress post and return its ID. Tags must already be resolved.
+
+    `focus_keyphrase` / `meta_description` / `seo_title` are written as Yoast
+    SEO post meta. Yoast doesn't expose these meta keys to REST by default —
+    a small mu-plugin (yoast-rest-meta.php) must be installed on WP for the
+    write to take effect. Without it, the meta keys are silently dropped and
+    Yoast's SEO score stays red.
+    """
     wp_url = os.environ["WP_URL"].rstrip("/")
     username = os.environ["WP_USERNAME"]
     password = os.environ["WP_APP_PASSWORD"]
@@ -39,6 +49,16 @@ def publish_post(
         payload["featured_media"] = featured_media
     if WP_CATEGORY_ID:
         payload["categories"] = [WP_CATEGORY_ID]
+
+    yoast_meta = {}
+    if focus_keyphrase:
+        yoast_meta["_yoast_wpseo_focuskw"] = focus_keyphrase
+    if meta_description:
+        yoast_meta["_yoast_wpseo_metadesc"] = meta_description
+    if seo_title:
+        yoast_meta["_yoast_wpseo_title"] = seo_title
+    if yoast_meta:
+        payload["meta"] = yoast_meta
 
     posts_endpoint = f"{wp_url}/wp-json/wp/v2/posts"
     resp = requests.post(
