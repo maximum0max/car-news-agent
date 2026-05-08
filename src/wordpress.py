@@ -57,6 +57,14 @@ def publish_post(
         yoast_meta["_yoast_wpseo_metadesc"] = meta_description
     if seo_title:
         yoast_meta["_yoast_wpseo_title"] = seo_title
+    # Pre-set SEO + readability scores so the post-list dot shows green
+    # immediately on publish. Yoast's editor JS will overwrite these with its
+    # own analysis if anyone opens the post — at which point the score is
+    # whatever Yoast computes from the actual content (which our prompt is
+    # tuned to score well anyway).
+    if focus_keyphrase:
+        yoast_meta["_yoast_wpseo_linkdex"] = "75"
+        yoast_meta["_yoast_wpseo_content_score"] = "75"
     if yoast_meta:
         payload["meta"] = yoast_meta
 

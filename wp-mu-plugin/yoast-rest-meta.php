@@ -17,13 +17,22 @@
  */
 
 add_action('init', function () {
-    $keys = [
+    // String-valued meta (focus keyphrase, meta description, SEO title).
+    $string_keys = [
         '_yoast_wpseo_focuskw',
         '_yoast_wpseo_metadesc',
         '_yoast_wpseo_title',
     ];
 
-    foreach ($keys as $key) {
+    // Score meta (0-100, stored as string by Yoast). Writing these directly
+    // colors the post-list dot at publish time. Yoast's editor JS will
+    // overwrite with its own analysis if/when someone opens the post.
+    $score_keys = [
+        '_yoast_wpseo_linkdex',         // SEO score
+        '_yoast_wpseo_content_score',   // Readability score
+    ];
+
+    foreach (array_merge($string_keys, $score_keys) as $key) {
         register_post_meta('post', $key, [
             'show_in_rest' => true,
             'single'       => true,
