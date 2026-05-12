@@ -25,7 +25,7 @@ from config import (
     SOCIAL_WHATSAPP_ICON,
     SOCIAL_WHATSAPP_URL,
 )
-from feeds import get_new_articles, load_processed, mark_processed
+from feeds import get_new_articles, load_processed, load_recent_sources, mark_processed
 from images import find_and_upload_image
 from rewriter import ArticleSkipped, escape_html, rewrite_article
 from wordpress import find_related_posts, publish_post, resolve_tag_ids
@@ -43,9 +43,15 @@ def run() -> int:
     log.info("Car news agent starting")
 
     processed = load_processed()
-    log.info(f"State: {len(processed)} articles previously processed")
+    recent_sources = load_recent_sources()
+    log.info(
+        f"State: {len(processed)} articles previously processed; "
+        f"recent source rotation = {recent_sources or '(empty)'}"
+    )
 
-    candidates = get_new_articles(PRIMARY_FEEDS_UA, SECONDARY_FEEDS_EN, processed)
+    candidates = get_new_articles(
+        PRIMARY_FEEDS_UA, SECONDARY_FEEDS_EN, processed, recent_sources
+    )
     if not candidates:
         log.info("No new articles to process. Exiting cleanly.")
         return 0
@@ -116,8 +122,11 @@ def run() -> int:
             # Don't mark processed — we want to retry on next run.
             continue
 
-        mark_processed(url)
-        log.info(f"✓ Published post id={post_id}: {rewritten['title']}")
+        mark_processed(url, source_host=article.get("source_host"))
+        log.info(
+            f"✓ Published post id={post_id} from {article.get('source_host')}: "
+            f"{rewritten['title']}"
+        )
         posted += 1
 
     log.info(f"Run complete. Posted {posted} article(s).")

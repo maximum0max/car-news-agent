@@ -13,13 +13,23 @@ to tune behavior.
 PRIMARY_FEEDS_UA = [
     "https://autogeek.com.ua/feed/",
     "https://news.infocar.ua/rss/news.php",
+    "https://autocentre.ua/feed/",
 ]
 
 SECONDARY_FEEDS_EN = [
+    # Tier 1 — high-volume mainstream
     "https://www.carscoops.com/feed/",
     "https://www.motor1.com/rss/articles/all/",
     "https://insideevs.com/rss/articles/all/",
     "https://electrek.co/feed/",
+    # Tier 2 — established outlets, broader topic mix
+    "https://www.autoblog.com/rss.xml",
+    "https://www.caranddriver.com/rss/all.xml",
+    "https://www.roadandtrack.com/rss/all.xml",
+    "https://www.topgear.com/feeds/all",
+    "https://www.autoweek.com/rss/all.xml",
+    "https://cleantechnica.com/feed/",
+    "https://www.thedrive.com/feed",
 ]
 
 # Hostnames considered Ukrainian-language sources. Used by feeds.py to tag each
@@ -28,7 +38,13 @@ UKRAINIAN_SOURCE_HOSTS = {
     "autogeek.com.ua",
     "news.infocar.ua",
     "infocar.ua",
+    "autocentre.ua",
 }
+
+# Source-rotation: remember the last N hostnames published from, and prefer
+# candidates from other sources on the next run. Stops one busy feed (e.g.
+# Carscoops) from dominating the queue when it publishes faster than others.
+RECENT_SOURCES_LIMIT = 5
 
 # OpenAI model. gpt-4o has substantially better Ukrainian quality and
 # follows length/structure constraints reliably — worth the ~10x cost
