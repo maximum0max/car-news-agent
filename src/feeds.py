@@ -3,6 +3,8 @@ Read RSS feeds, extract full article text, and manage the processed-URL state.
 """
 import json
 import logging
+import random
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -109,39 +111,40 @@ def get_new_articles(
     recent_sources: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Two-tier article selection with source rotation:
-      1. Try primary (Ukrainian) feeds first — if any new article is found and
-         its body extracts cleanly, return only those candidates.
-      2. Only when primary feeds yield nothing usable, fall back to secondary
-         (English) feeds. The rewriter applies a Ukraine-relevance gate.
+    UA-first article selection with fair source rotation and a fallback to
+    English feeds.
 
-    Within each tier, candidates whose host is NOT in `recent_sources` are
-    preferred — this is how we stop one busy feed from monopolizing the queue.
+    Both tiers are collected up front, then ordered by this preference:
+      1. Ukrainian sources NOT used recently  (randomized across feeds)
+      2. English sources NOT used recently     (randomized across feeds)
+      3. Ukrainian sources used recently        (least-recently-used first)
+      4. English sources used recently          (least-recently-used first)
+
+    The effect: we keep publishing Ukrainian content, but never repeat the
+    same source while another UA feed has fresh material. Once every UA source
+    has been used recently, we dip into the English feeds (the rewriter applies
+    its Ukraine-relevance gate) instead of repeating a UA source — so coverage
+    stays varied. Randomizing the order within each group means the run doesn't
+    always lead with the same feed (e.g. autogeek).
     """
-    primary = _collect_candidates(primary_feeds, processed, recent_sources)
-    enriched_primary = _enrich(primary)
-    if enriched_primary:
-        log.info(f"Using {len(enriched_primary)} primary (UA) candidate(s)")
-        return enriched_primary
+    ua = _collect_candidates(primary_feeds, processed)
+    en = _collect_candidates(secondary_feeds, processed)
+    ordered = _order_candidates(ua, en, recent_sources or [])
 
-    log.info("No primary (UA) candidates available — falling back to secondary (EN) feeds")
-    secondary = _collect_candidates(secondary_feeds, processed, recent_sources)
-    enriched_secondary = _enrich(secondary)
-    log.info(f"Found {len(enriched_secondary)} secondary (EN) candidate(s)")
-    return enriched_secondary
+    if ordered:
+        lead = ordered[0]
+        log.info(
+            f"{len(ua)} UA + {len(en)} EN candidate(s); "
+            f"leading with [{lead['source_lang']}] {lead['source_host']}"
+        )
+    return _enrich(ordered)
 
 
 def _collect_candidates(
     feeds: list[str],
     processed: set[str],
-    recent_sources: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """
-    Parse the given feeds and return un-processed entries. Ordering:
-    candidates whose host is NOT in `recent_sources` come first (newest-first
-    inside that group), then candidates from recent hosts (also newest-first).
-    """
-    recent_set = set(recent_sources or [])
+    """Parse the given feeds and return un-processed entries, newest first."""
     candidates: list[dict[str, Any]] = []
 
     for feed_url in feeds:
@@ -170,12 +173,56 @@ def _collect_candidates(
                 "summary": entry.get("summary", ""),
             })
 
-    # Two stable sorts. First by date desc (newest first), then by
-    # was-this-host-used-recently (False=0 before True=1). The stable sort
-    # preserves the date order within each rotation group.
     candidates.sort(key=lambda c: c["published"] or (0,) * 9, reverse=True)
-    candidates.sort(key=lambda c: c["source_host"] in recent_set)
     return candidates
+
+
+def _shuffle_by_source(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Round-robin candidates across their source hosts in a random host order.
+    Keeps each source's articles newest-first, but spreads different sources
+    through the list so the top picks aren't all from one busy feed.
+    """
+    by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for c in candidates:
+        by_host[c["source_host"]].append(c)
+
+    hosts = list(by_host.keys())
+    random.shuffle(hosts)
+
+    ordered: list[dict[str, Any]] = []
+    while any(by_host[h] for h in hosts):
+        for h in hosts:
+            if by_host[h]:
+                ordered.append(by_host[h].pop(0))
+    return ordered
+
+
+def _order_candidates(
+    ua: list[dict[str, Any]],
+    en: list[dict[str, Any]],
+    recent_sources: list[str],
+) -> list[dict[str, Any]]:
+    """Apply the UA-first, rotate-then-dip-into-EN preference (see caller)."""
+    recent_set = set(recent_sources)
+
+    def split(cands: list[dict[str, Any]]):
+        fresh = [c for c in cands if c["source_host"] not in recent_set]
+        stale = [c for c in cands if c["source_host"] in recent_set]
+        # Least-recently-used first: a host's recency is its index in the
+        # most-recent-first `recent_sources` list (higher index = used longer ago).
+        stale.sort(key=lambda c: recent_sources.index(c["source_host"]), reverse=True)
+        return fresh, stale
+
+    ua_fresh, ua_stale = split(ua)
+    en_fresh, en_stale = split(en)
+
+    return (
+        _shuffle_by_source(ua_fresh)
+        + _shuffle_by_source(en_fresh)
+        + ua_stale
+        + en_stale
+    )
 
 
 def _enrich(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:

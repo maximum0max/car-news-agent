@@ -41,10 +41,16 @@ UKRAINIAN_SOURCE_HOSTS = {
     "autocentre.ua",
 }
 
-# Source-rotation: remember the last N hostnames published from, and prefer
-# candidates from other sources on the next run. Stops one busy feed (e.g.
-# Carscoops) from dominating the queue when it publishes faster than others.
-RECENT_SOURCES_LIMIT = 5
+# Source-rotation: remember the last N hostnames published from. A source in
+# this list is skipped while any *other* source has fresh material, so we cycle
+# through feeds instead of repeating one. With 3 Ukrainian feeds, a value of 4
+# means all 3 UA sources rotate before any repeats, and we dip into an English
+# feed once the UA sources are exhausted — keeping output UA-dominant but varied.
+#
+# Tuning: LOWER this number -> more Ukrainian-heavy (UA sources free up sooner);
+# RAISE it -> more English variety (UA sources stay "recently used" longer, so
+# more English articles fill the gap before a UA source repeats).
+RECENT_SOURCES_LIMIT = 4
 
 # OpenAI model. gpt-4o has substantially better Ukrainian quality and
 # follows length/structure constraints reliably — worth the ~10x cost
