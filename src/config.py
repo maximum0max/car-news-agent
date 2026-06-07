@@ -13,7 +13,10 @@ to tune behavior.
 PRIMARY_FEEDS_UA = [
     "https://autogeek.com.ua/feed/",
     "https://news.infocar.ua/rss/news.php",
-    "https://autocentre.ua/feed/",
+    "https://autoua.net/rss/",
+    "https://auto.bigmir.net/rss/",
+    "https://carexpert.com.ua/feed/",
+    # autocentre.ua/feed/ removed — its RSS returns zero items (dead feed).
 ]
 
 SECONDARY_FEEDS_EN = [
@@ -30,6 +33,12 @@ SECONDARY_FEEDS_EN = [
     "https://www.autoweek.com/rss/all.xml",
     "https://cleantechnica.com/feed/",
     "https://www.thedrive.com/feed",
+    # Tier 3 — major world car-news outlets (broad international model coverage)
+    "https://www.autocar.co.uk/rss",
+    "https://www.autoexpress.co.uk/feeds/all",
+    "https://jalopnik.com/rss",
+    "https://carbuzz.com/feed",
+    "https://newatlas.com/automotive/index.rss",
 ]
 
 # Hostnames considered Ukrainian-language sources. Used by feeds.py to tag each
@@ -39,18 +48,22 @@ UKRAINIAN_SOURCE_HOSTS = {
     "news.infocar.ua",
     "infocar.ua",
     "autocentre.ua",
+    "autoua.net",
+    "autonews.autoua.net",
+    "auto.bigmir.net",
+    "carexpert.com.ua",
 }
 
 # Source-rotation: remember the last N hostnames published from. A source in
 # this list is skipped while any *other* source has fresh material, so we cycle
-# through feeds instead of repeating one. With 3 Ukrainian feeds, a value of 4
-# means all 3 UA sources rotate before any repeats, and we dip into an English
-# feed once the UA sources are exhausted — keeping output UA-dominant but varied.
+# through feeds instead of repeating one. With 5 working Ukrainian feeds, a value
+# of 5 means all UA sources rotate before any one repeats. Ukrainian sources are
+# always preferred over global ones (see feeds._order_candidates), so we stay
+# UA-dominant and only dip into the world feeds when no fresh UA article exists.
 #
-# Tuning: LOWER this number -> more Ukrainian-heavy (UA sources free up sooner);
-# RAISE it -> more English variety (UA sources stay "recently used" longer, so
-# more English articles fill the gap before a UA source repeats).
-RECENT_SOURCES_LIMIT = 4
+# Tuning: LOWER this number -> sources free up sooner (more repeats, less spread);
+# RAISE it -> longer rotation before any source can repeat (more variety).
+RECENT_SOURCES_LIMIT = 5
 
 # OpenAI model. gpt-4o has substantially better Ukrainian quality and
 # follows length/structure constraints reliably — worth the ~10x cost

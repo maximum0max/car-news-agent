@@ -116,16 +116,17 @@ def get_new_articles(
 
     Both tiers are collected up front, then ordered by this preference:
       1. Ukrainian sources NOT used recently  (randomized across feeds)
-      2. English sources NOT used recently     (randomized across feeds)
-      3. Ukrainian sources used recently        (least-recently-used first)
-      4. English sources used recently          (least-recently-used first)
+      2. Ukrainian sources used recently        (least-recently-used first)
+      3. Global/English sources NOT used recently (randomized across feeds)
+      4. Global/English sources used recently     (least-recently-used first)
 
-    The effect: we keep publishing Ukrainian content, but never repeat the
-    same source while another UA feed has fresh material. Once every UA source
-    has been used recently, we dip into the English feeds (the rewriter applies
-    its Ukraine-relevance gate) instead of repeating a UA source — so coverage
-    stays varied. Randomizing the order within each group means the run doesn't
-    always lead with the same feed (e.g. autogeek).
+    Ukrainian sources ALWAYS rank above global ones, because UA articles are
+    never relevance-gated — so as long as any UA feed has a fresh article, the
+    run publishes it (this is what keeps nearly every run posting). We only dip
+    into the global feeds when no UA article is left at all; the rewriter then
+    applies its Ukraine-relevance gate to the world news. Within each tier we
+    prefer not-recently-used sources first and randomize among them, so we
+    rotate across feeds instead of repeating the same source.
     """
     ua = _collect_candidates(primary_feeds, processed)
     en = _collect_candidates(secondary_feeds, processed)
@@ -219,8 +220,8 @@ def _order_candidates(
 
     return (
         _shuffle_by_source(ua_fresh)
-        + _shuffle_by_source(en_fresh)
         + ua_stale
+        + _shuffle_by_source(en_fresh)
         + en_stale
     )
 
